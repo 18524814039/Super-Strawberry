@@ -42,7 +42,7 @@ class Trainer:
 
         # 学习率调度器
         self.scheduler = ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.5, patience=5, verbose=True
+            self.optimizer, mode='min', factor=0.5, patience=5
         )
 
         # 训练历史
