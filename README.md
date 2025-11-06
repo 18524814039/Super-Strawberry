@@ -8,7 +8,7 @@
 
 ### 任务描述
 
-- **输入**: 前N个时间步的多维特征数据 (Time, Torque, signal_0, signal_1, signal_2)
+- **输入**: 前N个时间步的多维特征数据 (Time, signal_0, signal_1, signal_2)
 - **输出**: 后M个时间步的目标信号预测值
 - **数据频率**: 0.01秒/步 (100Hz采样率)
 - **示例**: 输入前1秒数据 → 预测后4秒的力学曲线
@@ -43,7 +43,7 @@ Super-Strawberry/
 
 2. **准备数据**
    - 将CSV文件上传到Colab或挂载Google Drive
-   - CSV格式要求: `Time(s), Torque, signal_0, signal_1, signal_2`
+   - CSV格式要求: `Time(s), signal_0, signal_1, signal_2`
    - 文件命名: `Data_*_*_open.csv`
 
 3. **运行Notebook**
@@ -88,7 +88,7 @@ Super-Strawberry/
    # 创建模型
    model = get_model(
        model_type='simple_lstm',
-       input_dim=5,
+       input_dim=4,
        hidden_dim=128,
        output_length=400
    )

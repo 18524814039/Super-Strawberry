@@ -138,7 +138,7 @@ def main():
 
     # 创建模型
     print("\n创建模型...")
-    input_dim = 5 if args.use_all_features else 1
+    input_dim = 4 if args.use_all_features else 1
     model = get_model(
         model_type=args.model,
         input_dim=input_dim,

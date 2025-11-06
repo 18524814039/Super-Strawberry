@@ -54,8 +54,8 @@ class TorqueDataset(Dataset):
 
             # 提取特征
             if self.use_all_features:
-                # 使用所有特征：Time, Torque, signal_0, signal_1, signal_2
-                features = df[['Time(s)', 'Torque', 'signal_0', 'signal_1', 'signal_2']].values
+                # 使用所有特征：Time, signal_0, signal_1, signal_2
+                features = df[['Time(s)', 'signal_0', 'signal_1', 'signal_2']].values
             else:
                 # 仅使用目标信号
                 features = df[[self.signal_type]].values

@@ -22,7 +22,7 @@ def generate_torque_curve(n_samples, seed=None):
         seed: 随机种子
 
     Returns:
-        time, torque, signal_0, signal_1, signal_2
+        time, signal_0, signal_1, signal_2
     """
     if seed is not None:
         np.random.seed(seed)
@@ -62,7 +62,7 @@ def generate_torque_curve(n_samples, seed=None):
     signal_2 = 1.5 * np.sin(2 * np.pi * base_freq * 0.5 * time) + \
                0.3 * trend + np.random.normal(0, 0.08, n_samples)
 
-    return time, torque, signal_0, signal_1, signal_2
+    return time, signal_0, signal_1, signal_2
 
 
 def generate_sample_data(n_files=10, n_samples=1000, output_dir='./data'):
@@ -88,7 +88,7 @@ def generate_sample_data(n_files=10, n_samples=1000, output_dir='./data'):
 
     for i in range(n_files):
         # 生成数据
-        time, torque, signal_0, signal_1, signal_2 = generate_torque_curve(
+        time, signal_0, signal_1, signal_2 = generate_torque_curve(
             n_samples=n_samples,
             seed=42 + i  # 不同的种子生成不同的数据
         )
@@ -96,7 +96,6 @@ def generate_sample_data(n_files=10, n_samples=1000, output_dir='./data'):
         # 创建DataFrame
         df = pd.DataFrame({
             'Time(s)': time,
-            'Torque': torque,
             'signal_0': signal_0,
             'signal_1': signal_1,
             'signal_2': signal_2

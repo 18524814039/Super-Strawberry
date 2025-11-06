@@ -21,7 +21,7 @@ class LSTMPredictor(nn.Module):
         dropout: Dropout比例
     """
 
-    def __init__(self, input_dim=5, hidden_dim=128, num_layers=2,
+    def __init__(self, input_dim=4, hidden_dim=128, num_layers=2,
                  output_length=400, dropout=0.2):
         super(LSTMPredictor, self).__init__()
 
@@ -96,7 +96,7 @@ class GRUPredictor(nn.Module):
     相比LSTM参数更少，训练更快
     """
 
-    def __init__(self, input_dim=5, hidden_dim=128, num_layers=2,
+    def __init__(self, input_dim=4, hidden_dim=128, num_layers=2,
                  output_length=400, dropout=0.2):
         super(GRUPredictor, self).__init__()
 
@@ -157,7 +157,7 @@ class TransformerPredictor(nn.Module):
     使用注意力机制捕捉长距离依赖
     """
 
-    def __init__(self, input_dim=5, d_model=128, nhead=8, num_layers=2,
+    def __init__(self, input_dim=4, d_model=128, nhead=8, num_layers=2,
                  output_length=400, dropout=0.2):
         super(TransformerPredictor, self).__init__()
 
@@ -238,7 +238,7 @@ class SimpleLSTM(nn.Module):
     直接从输入序列预测输出序列，不使用解码器
     """
 
-    def __init__(self, input_dim=5, hidden_dim=128, num_layers=2,
+    def __init__(self, input_dim=4, hidden_dim=128, num_layers=2,
                  output_length=400, dropout=0.2):
         super(SimpleLSTM, self).__init__()
 
@@ -272,7 +272,7 @@ class SimpleLSTM(nn.Module):
         return predictions
 
 
-def get_model(model_type='lstm', input_dim=5, hidden_dim=128, num_layers=2,
+def get_model(model_type='lstm', input_dim=4, hidden_dim=128, num_layers=2,
               output_length=400, dropout=0.2):
     """
     根据类型获取模型

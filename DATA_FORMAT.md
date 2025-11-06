@@ -9,12 +9,11 @@
 
 ### CSV列格式
 
-CSV文件必须包含以下5列（按顺序）:
+CSV文件必须包含以下4列（按顺序）:
 
 | 列名 | 类型 | 说明 | 单位 |
 |------|------|------|------|
 | Time(s) | float | 时间戳 | 秒 |
-| Torque | float | 扭矩值 | N·m |
 | signal_0 | float | 信号0 | - |
 | signal_1 | float | 信号1（主要预测目标） | - |
 | signal_2 | float | 信号2 | - |
@@ -30,11 +29,11 @@ CSV文件必须包含以下5列（按顺序）:
 ### CSV文件示例
 
 ```csv
-Time(s),Torque,signal_0,signal_1,signal_2
-0.00,0.123,0.456,0.789,0.012
-0.01,0.125,0.458,0.791,0.013
-0.02,0.127,0.460,0.793,0.014
-0.03,0.129,0.462,0.795,0.015
+Time(s),signal_0,signal_1,signal_2
+0.00,0.456,0.789,0.012
+0.01,0.458,0.791,0.013
+0.02,0.460,0.793,0.014
+0.03,0.462,0.795,0.015
 ...
 ```
 
@@ -60,7 +59,6 @@ def generate_sample_data(n_samples=1000, save_dir='./data'):
         # 使用正弦波 + 噪声 模拟真实曲线
         base_freq = 0.5 + i * 0.1
 
-        torque = 2 * np.sin(2 * np.pi * base_freq * time) + np.random.normal(0, 0.1, n_samples)
         signal_0 = 1.5 * np.sin(2 * np.pi * base_freq * time + 0.5) + np.random.normal(0, 0.05, n_samples)
         signal_1 = 2.5 * np.sin(2 * np.pi * base_freq * time + 1.0) + np.random.normal(0, 0.08, n_samples)
         signal_2 = 1.8 * np.sin(2 * np.pi * base_freq * time + 1.5) + np.random.normal(0, 0.06, n_samples)
@@ -72,7 +70,6 @@ def generate_sample_data(n_samples=1000, save_dir='./data'):
         # 创建DataFrame
         df = pd.DataFrame({
             'Time(s)': time,
-            'Torque': torque,
             'signal_0': signal_0,
             'signal_1': signal_1,
             'signal_2': signal_2
