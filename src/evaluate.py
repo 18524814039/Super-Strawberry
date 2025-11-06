@@ -99,10 +99,11 @@ def plot_predictions(inputs, predictions, targets, num_samples=4, save_path=None
         # 计算误差
         mse = mean_squared_error(targets[i], predictions[i])
         mae = mean_absolute_error(targets[i], predictions[i])
+        r2 = r2_score(targets[i], predictions[i])
 
         ax.set_xlabel('Time Step', fontsize=11)
         ax.set_ylabel('Signal Value', fontsize=11)
-        ax.set_title(f'Sample {i + 1} - MSE: {mse:.4f}, MAE: {mae:.4f}',
+        ax.set_title(f'Sample {i + 1} - MSE: {mse:.4f}, MAE: {mae:.4f}, R²: {r2:.4f}',
                      fontsize=12, fontweight='bold')
         ax.legend(fontsize=10, loc='best')
         ax.grid(True, alpha=0.3)
