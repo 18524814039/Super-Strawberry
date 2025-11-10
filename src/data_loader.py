@@ -273,7 +273,9 @@ class DynamicTorqueDataset(Dataset):
                 samples.append({
                     'input': input_seq,
                     'output': output_seq,
-                    'length_bucket': (total_length // self.bucket_size) * self.bucket_size  # 长度桶标识
+                    'input_length': input_length,
+                    'output_length': output_length,
+                    'length_bucket': (input_length, output_length)  # 使用精确的长度组合作为bucket key
                 })
 
         # 打印长度统计信息
@@ -294,10 +296,26 @@ class DynamicTorqueDataset(Dataset):
             bucket = sample['length_bucket']
             self.length_buckets[bucket].append(idx)
 
-        print(f"\n长度分组统计（bucket_size={self.bucket_size}）：")
-        for bucket in sorted(self.length_buckets.keys()):
-            count = len(self.length_buckets[bucket])
-            print(f"  {bucket}-{bucket+self.bucket_size-1} 步: {count} 个样本")
+        print(f"\n长度分组统计（精确匹配）：")
+        print(f"  共 {len(self.length_buckets)} 个不同的长度组合")
+
+        # 按总长度排序显示
+        sorted_buckets = sorted(self.length_buckets.keys(), key=lambda x: x[0] + x[1])
+
+        # 只显示前10个和后10个，避免输出过长
+        if len(sorted_buckets) <= 20:
+            buckets_to_show = sorted_buckets
+        else:
+            buckets_to_show = sorted_buckets[:10] + [('...', '...')] + sorted_buckets[-10:]
+
+        for bucket in buckets_to_show:
+            if bucket == ('...', '...'):
+                print(f"  ... (省略 {len(sorted_buckets) - 20} 个组合) ...")
+            else:
+                count = len(self.length_buckets[bucket])
+                input_len, output_len = bucket
+                total = input_len + output_len
+                print(f"  {input_len}→{output_len} (总{total}步): {count} 个样本")
 
     def __len__(self):
         return len(self.samples)
