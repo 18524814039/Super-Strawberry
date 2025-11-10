@@ -66,9 +66,9 @@ class Trainer:
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
 
-            # 前向传播
+            # 前向传播（传递 targets 以支持动态长度）
             self.optimizer.zero_grad()
-            outputs = self.model(inputs)
+            outputs = self.model(inputs, targets=targets)
 
             # 计算损失
             loss = self.criterion(outputs, targets)
@@ -102,7 +102,7 @@ class Trainer:
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
 
-                outputs = self.model(inputs)
+                outputs = self.model(inputs, targets=targets)
                 loss = self.criterion(outputs, targets)
 
                 total_loss += loss.item()
@@ -266,7 +266,8 @@ def predict_batch(model, data_loader, device='cuda'):
     with torch.no_grad():
         for inputs, targets in tqdm(data_loader, desc='Predicting'):
             inputs = inputs.to(device)
-            outputs = model(inputs)
+            targets_device = targets.to(device)
+            outputs = model(inputs, targets=targets_device)
 
             all_predictions.append(outputs.cpu().numpy())
             all_targets.append(targets.numpy())

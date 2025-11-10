@@ -50,21 +50,26 @@ class LSTMPredictor(nn.Module):
         # 输出层
         self.fc = nn.Linear(hidden_dim, 1)
 
-    def forward(self, x, target_len=None):
+    def forward(self, x, target_len=None, targets=None):
         """
         前向传播
 
         Args:
             x: 输入序列 [batch_size, input_length, input_dim]
-            target_len: 目标序列长度（推理时使用）
+            target_len: 目标序列长度（显式指定，优先级最高）
+            targets: 目标序列 [batch_size, target_length]（用于自动推断长度）
 
         Returns:
             predictions: [batch_size, output_length, 1]
         """
         batch_size = x.size(0)
 
+        # 确定输出长度（优先级：target_len > targets.shape > self.output_length）
         if target_len is None:
-            target_len = self.output_length
+            if targets is not None:
+                target_len = targets.size(1)  # 自动适应目标长度（动态长度模式）
+            else:
+                target_len = self.output_length  # 使用默认长度
 
         # 编码器
         encoder_output, (hidden, cell) = self.encoder(x)
