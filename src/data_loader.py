@@ -270,12 +270,17 @@ class DynamicTorqueDataset(Dataset):
                 input_seq = features[i:i + input_length]
                 output_seq = target[i + input_length:i + total_length]
 
+                # ✅ 使用粗粒度分组：按总长度的bucket_size分组，而不是精确匹配
+                # 这样可以将相似长度的样本组合到一起
+                length_bucket = (total_length // self.bucket_size) * self.bucket_size
+
                 samples.append({
                     'input': input_seq,
                     'output': output_seq,
                     'input_length': input_length,
                     'output_length': output_length,
-                    'length_bucket': (input_length, output_length)  # 使用精确的长度组合作为bucket key
+                    'total_length': total_length,
+                    'length_bucket': length_bucket  # 按区间分组
                 })
 
         # 打印长度统计信息
@@ -296,26 +301,16 @@ class DynamicTorqueDataset(Dataset):
             bucket = sample['length_bucket']
             self.length_buckets[bucket].append(idx)
 
-        print(f"\n长度分组统计（精确匹配）：")
-        print(f"  共 {len(self.length_buckets)} 个不同的长度组合")
+        print(f"\n长度分组统计（按{self.bucket_size}步分组）：")
+        print(f"  共 {len(self.length_buckets)} 个长度桶")
 
-        # 按总长度排序显示
-        sorted_buckets = sorted(self.length_buckets.keys(), key=lambda x: x[0] + x[1])
+        # 按bucket值排序显示
+        sorted_buckets = sorted(self.length_buckets.keys())
 
-        # 只显示前10个和后10个，避免输出过长
-        if len(sorted_buckets) <= 20:
-            buckets_to_show = sorted_buckets
-        else:
-            buckets_to_show = sorted_buckets[:10] + [('...', '...')] + sorted_buckets[-10:]
-
-        for bucket in buckets_to_show:
-            if bucket == ('...', '...'):
-                print(f"  ... (省略 {len(sorted_buckets) - 20} 个组合) ...")
-            else:
-                count = len(self.length_buckets[bucket])
-                input_len, output_len = bucket
-                total = input_len + output_len
-                print(f"  {input_len}→{output_len} (总{total}步): {count} 个样本")
+        for bucket in sorted_buckets:
+            count = len(self.length_buckets[bucket])
+            bucket_end = bucket + self.bucket_size - 1
+            print(f"  {bucket}-{bucket_end}步: {count} 个样本")
 
     def __len__(self):
         return len(self.samples)
@@ -332,6 +327,41 @@ class DynamicTorqueDataset(Dataset):
     def get_length_bucket(self, idx):
         """获取样本的长度桶标识"""
         return self.samples[idx]['length_bucket']
+
+
+def collate_dynamic_batch(batch):
+    """
+    自定义collate函数，处理同一bucket内不同长度的样本
+    使用padding对齐到batch内的最大长度
+    """
+    inputs, outputs = zip(*batch)
+
+    # 找到batch内的最大长度
+    max_input_len = max(inp.size(0) for inp in inputs)
+    max_output_len = max(out.size(0) for out in outputs)
+
+    # Padding
+    padded_inputs = []
+    padded_outputs = []
+
+    for inp, out in zip(inputs, outputs):
+        # Input padding
+        if inp.size(0) < max_input_len:
+            pad_size = max_input_len - inp.size(0)
+            inp = torch.cat([inp, torch.zeros(pad_size, inp.size(1))], dim=0)
+        padded_inputs.append(inp)
+
+        # Output padding
+        if out.size(0) < max_output_len:
+            pad_size = max_output_len - out.size(0)
+            out = torch.cat([out, torch.zeros(pad_size)], dim=0)
+        padded_outputs.append(out)
+
+    # Stack成batch
+    inputs_batch = torch.stack(padded_inputs, dim=0)
+    outputs_batch = torch.stack(padded_outputs, dim=0)
+
+    return inputs_batch, outputs_batch
 
 
 class BucketBatchSampler(Sampler):
@@ -453,16 +483,18 @@ def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
     train_sampler = BucketBatchSampler(train_dataset, batch_size, shuffle=True)
     test_sampler = BucketBatchSampler(test_dataset, batch_size, shuffle=False)
 
-    # 创建DataLoader
+    # 创建DataLoader（使用自定义collate函数处理padding）
     train_loader = DataLoader(
         train_dataset,
         batch_sampler=train_sampler,
+        collate_fn=collate_dynamic_batch,
         num_workers=0
     )
 
     test_loader = DataLoader(
         test_dataset,
         batch_sampler=test_sampler,
+        collate_fn=collate_dynamic_batch,
         num_workers=0
     )
 
