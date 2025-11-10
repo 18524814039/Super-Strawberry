@@ -363,8 +363,8 @@ class BucketBatchSampler(Sampler):
             # 将桶内样本分成多个batches
             for i in range(0, len(indices), self.batch_size):
                 batch = indices[i:i + self.batch_size]
-                if len(batch) == self.batch_size:  # 只保留完整的batch
-                    all_batches.append(batch)
+                # ✅ 保留所有batch，包括不完整的（之前只保留完整的导致数据丢失）
+                all_batches.append(batch)
 
         # 打乱所有batches的顺序
         if self.shuffle:
@@ -375,10 +375,10 @@ class BucketBatchSampler(Sampler):
             yield batch
 
     def __len__(self):
-        # 计算总batch数
+        # 计算总batch数（包括不完整的batch）
         total_batches = 0
         for indices in self.bucket_to_indices.values():
-            total_batches += len(indices) // self.batch_size
+            total_batches += (len(indices) + self.batch_size - 1) // self.batch_size  # 向上取整
         return total_batches
 
 
