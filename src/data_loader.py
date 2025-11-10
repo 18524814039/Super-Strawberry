@@ -26,12 +26,13 @@ class TorqueDataset(Dataset):
     """
 
     def __init__(self, csv_files, input_length=100, output_length=400,
-                 signal_type='signal_1', use_all_features=True, scaler=None):
+                 signal_type='signal_1', use_all_features=True, scaler=None, step_size=50):
         self.input_length = input_length
         self.output_length = output_length
         self.signal_type = signal_type
         self.use_all_features = use_all_features
         self.scaler = scaler
+        self.step_size = step_size
 
         # 加载所有CSV文件
         self.data_list = []
@@ -54,8 +55,8 @@ class TorqueDataset(Dataset):
 
             # 提取特征
             if self.use_all_features:
-                # 使用所有特征：Time, signal_0, signal_1, signal_2
-                features = df[['Time(s)', 'signal_0', 'signal_1', 'signal_2']].values
+                # 使用所有特征：Time, Torque, signal_0, signal_1, signal_2
+                features = df[['Time(s)', 'Torque', 'signal_0', 'signal_1', 'signal_2']].values
             else:
                 # 仅使用目标信号
                 features = df[[self.signal_type]].values
@@ -64,9 +65,8 @@ class TorqueDataset(Dataset):
             target = df[self.signal_type].values
 
             # 在每个CSV文件中可以创建多个滑动窗口样本
-            # 这里我们每隔50个时间步创建一个样本（可调整）
-            step_size = 50
-            for i in range(0, len(df) - total_length + 1, step_size):
+            # step_size 可配置，默认50（可根据数据长度调整）
+            for i in range(0, len(df) - total_length + 1, self.step_size):
                 input_seq = features[i:i + self.input_length]
                 output_seq = target[i + self.input_length:i + total_length]
 
@@ -93,7 +93,7 @@ class TorqueDataset(Dataset):
 def load_data(data_dir, pattern='*_open.csv', train_split=0.8,
               input_length=100, output_length=400,
               signal_type='signal_1', use_all_features=True,
-              batch_size=32):
+              batch_size=32, step_size=50):
     """
     加载数据并创建训练集和测试集
 
@@ -135,7 +135,8 @@ def load_data(data_dir, pattern='*_open.csv', train_split=0.8,
         input_length=input_length,
         output_length=output_length,
         signal_type=signal_type,
-        use_all_features=use_all_features
+        use_all_features=use_all_features,
+        step_size=step_size
     )
 
     test_dataset = TorqueDataset(
@@ -143,7 +144,8 @@ def load_data(data_dir, pattern='*_open.csv', train_split=0.8,
         input_length=input_length,
         output_length=output_length,
         signal_type=signal_type,
-        use_all_features=use_all_features
+        use_all_features=use_all_features,
+        step_size=step_size
     )
 
     print(f"Training samples: {len(train_dataset)}")
