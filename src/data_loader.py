@@ -14,6 +14,7 @@ from torch.utils.data import Dataset, DataLoader, Sampler
 from sklearn.preprocessing import StandardScaler
 import glob
 import os
+import re
 from collections import defaultdict
 
 
@@ -224,6 +225,8 @@ class DynamicTorqueDataset(Dataset):
         self.data_list = []
         for csv_file in csv_files:
             df = pd.read_csv(csv_file)
+            # ⚠️ 跳过第一行数据（第二行，表头之后的第一个数据），因为它可能包含干扰数据
+            df = df.iloc[1:].reset_index(drop=True)
             if len(df) >= min_length:  # 只保留足够长的CSV
                 self.data_list.append(df)
 
@@ -444,15 +447,47 @@ def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
 
     print(f"Found {len(csv_files)} CSV files")
 
-    # 划分训练集和测试集
-    np.random.seed(42)
-    np.random.shuffle(csv_files)
-    split_idx = int(len(csv_files) * train_split)
-    train_files = csv_files[:split_idx]
-    test_files = csv_files[split_idx:]
+    # 📦 按瓶子编号分组（基于文件名格式 Data_a_b_open.csv）
+    # 这样可以避免同一瓶子的数据同时出现在训练集和测试集中，防止数据泄漏
+    bottle_to_files = defaultdict(list)
+    unmatched_files = []
 
-    print(f"Training files: {len(train_files)}")
-    print(f"Testing files: {len(test_files)}")
+    for csv_file in csv_files:
+        filename = os.path.basename(csv_file)
+        match = re.match(r'Data_(\d+)_\d+_open\.csv', filename)
+        if match:
+            bottle_num = int(match.group(1))
+            bottle_to_files[bottle_num].append(csv_file)
+        else:
+            # 不匹配模式的文件放入测试集
+            unmatched_files.append(csv_file)
+            print(f"Warning: {filename} doesn't match pattern Data_a_b_open.csv, will be added to test set")
+
+    # 按瓶子编号划分训练集和测试集
+    bottles = sorted(bottle_to_files.keys())
+    np.random.seed(42)
+    np.random.shuffle(bottles)
+    split_idx = int(len(bottles) * train_split)
+    train_bottles = bottles[:split_idx]
+    test_bottles = bottles[split_idx:]
+
+    # 收集所有训练和测试文件
+    train_files = []
+    test_files = []
+    for bottle in train_bottles:
+        train_files.extend(bottle_to_files[bottle])
+    for bottle in test_bottles:
+        test_files.extend(bottle_to_files[bottle])
+
+    # 将不匹配的文件添加到测试集
+    test_files.extend(unmatched_files)
+
+    print(f"\n📊 数据集划分（按瓶子编号）：")
+    print(f"  总瓶子数: {len(bottles)}")
+    print(f"  训练瓶子: {len(train_bottles)} 个 (瓶子编号: {min(train_bottles) if train_bottles else 'N/A'}-{max(train_bottles) if train_bottles else 'N/A'})")
+    print(f"  测试瓶子: {len(test_bottles)} 个 (瓶子编号: {min(test_bottles) if test_bottles else 'N/A'}-{max(test_bottles) if test_bottles else 'N/A'})")
+    print(f"  训练文件: {len(train_files)}")
+    print(f"  测试文件: {len(test_files)}")
 
     # 创建动态数据集
     print("\n创建训练集...")
