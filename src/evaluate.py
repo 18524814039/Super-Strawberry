@@ -252,18 +252,18 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
                     save_path=os.path.join(save_dir, 'predictions.png'))
 
     # 误差分布图（使用所有样本）
-    # 将所有batch的predictions和targets重塑为2D数组
-    all_predictions_2d = np.concatenate([pred.reshape(pred.shape[0], -1) for pred in all_predictions], axis=0)
-    all_targets_2d = np.concatenate([tgt.reshape(tgt.shape[0], -1) for tgt in all_targets], axis=0)
-
-    # 找到所有样本中的最小长度
+    # 找到所有batch中最小的序列长度
     min_seq_len = min(pred.shape[1] for pred in all_predictions)
 
-    # 截断到最小长度以便可视化
-    predictions_for_plot = np.array([pred[:, :min_seq_len] for pred in all_predictions])
-    targets_for_plot = np.array([tgt[:, :min_seq_len] for tgt in all_targets])
-    predictions_for_plot = predictions_for_plot.reshape(-1, min_seq_len)
-    targets_for_plot = targets_for_plot.reshape(-1, min_seq_len)
+    # 截断所有batch到最小长度，然后合并
+    predictions_for_plot = []
+    targets_for_plot = []
+    for pred, tgt in zip(all_predictions, all_targets):
+        predictions_for_plot.append(pred[:, :min_seq_len])
+        targets_for_plot.append(tgt[:, :min_seq_len])
+
+    predictions_for_plot = np.concatenate(predictions_for_plot, axis=0)
+    targets_for_plot = np.concatenate(targets_for_plot, axis=0)
 
     plot_error_distribution(predictions_for_plot, targets_for_plot,
                            save_path=os.path.join(save_dir, 'error_distribution.png'))
