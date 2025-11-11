@@ -12,6 +12,79 @@ import pandas as pd
 import os
 
 
+def evaluate_baseline(data_loader, device='cuda'):
+    """
+    评估Persistence Baseline（持久化基线）
+
+    Baseline策略：用输入序列的最后一个值作为所有输出的预测
+    这是最简单的baseline，如果LSTM连这个都打不过，说明模型完全失败
+
+    Args:
+        data_loader: 测试数据加载器
+        device: 设备
+
+    Returns:
+        metrics: 评估指标字典
+    """
+    print("\n" + "=" * 60)
+    print("📊 评估 Persistence Baseline")
+    print("=" * 60)
+    print("策略: 用输入序列最后一个 signal_1 值预测所有输出")
+    print("-" * 60)
+
+    all_predictions = []
+    all_targets = []
+
+    for inputs, targets in data_loader:
+        # 提取 signal_1（假设是索引3，或者是第4列）
+        # inputs shape: [batch_size, input_length, features]
+        # 如果有5个特征(Time, Torque, signal_0, signal_1, signal_2)，signal_1是索引3
+
+        # 获取输入序列的最后一个signal_1值
+        last_signal1 = inputs[:, -1, 3]  # [batch_size]
+
+        # 用这个值预测所有输出
+        batch_size = inputs.size(0)
+        output_length = targets.size(1)
+
+        # Baseline预测：所有输出都是最后一个输入值
+        baseline_pred = last_signal1.unsqueeze(1).expand(batch_size, output_length)
+
+        all_predictions.append(baseline_pred.numpy())
+        all_targets.append(targets.numpy())
+
+    # 展平所有预测和目标
+    predictions_flat = np.concatenate([pred.flatten() for pred in all_predictions])
+    targets_flat = np.concatenate([tgt.flatten() for tgt in all_targets])
+
+    # 计算指标
+    mse = mean_squared_error(targets_flat, predictions_flat)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(targets_flat, predictions_flat)
+    r2 = r2_score(targets_flat, predictions_flat)
+
+    # MAPE
+    mask = targets_flat != 0
+    mape = np.mean(np.abs((targets_flat[mask] - predictions_flat[mask]) /
+                          targets_flat[mask])) * 100 if mask.sum() > 0 else float('inf')
+
+    metrics = {
+        'MSE': mse,
+        'RMSE': rmse,
+        'MAE': mae,
+        'R2': r2,
+        'MAPE': mape
+    }
+
+    # 打印指标
+    print("\nBaseline Metrics:")
+    for key, value in metrics.items():
+        print(f"{key:10s}: {value:.6f}")
+    print("=" * 60)
+
+    return metrics
+
+
 def plot_training_history(history, save_path=None):
     """
     绘制训练历史
