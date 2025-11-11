@@ -36,12 +36,12 @@ def evaluate_baseline(data_loader, device='cuda'):
     all_targets = []
 
     for inputs, targets in data_loader:
-        # 提取 signal_1（假设是索引3，或者是第4列）
+        # 提取 signal_1
         # inputs shape: [batch_size, input_length, features]
-        # 如果有5个特征(Time, Torque, signal_0, signal_1, signal_2)，signal_1是索引3
+        # ✅ 现在只有3个特征(signal_0, signal_1, signal_2)，signal_1是索引1
 
         # 获取输入序列的最后一个signal_1值
-        last_signal1 = inputs[:, -1, 3]  # [batch_size]
+        last_signal1 = inputs[:, -1, 1]  # [batch_size], 索引1是signal_1
 
         # 用这个值预测所有输出
         batch_size = inputs.size(0)
@@ -151,10 +151,10 @@ def plot_predictions(inputs, predictions, targets, num_samples=4, save_path=None
         input_time = np.arange(0, input_len)
         output_time = np.arange(input_len, input_len + output_len)
 
-        # 绘制输入序列（使用signal_1，假设是最后一列或指定列）
+        # 绘制输入序列（使用signal_1）
         if inputs.shape[2] > 1:
-            # 如果有多个特征，使用signal_1（假设是索引3）
-            input_signal = inputs[i, :, -2] if inputs.shape[2] >= 4 else inputs[i, :, 0]
+            # ✅ 只有3个特征(signal_0, signal_1, signal_2)，signal_1是索引1
+            input_signal = inputs[i, :, 1]
         else:
             input_signal = inputs[i, :, 0]
 

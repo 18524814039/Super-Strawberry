@@ -246,13 +246,15 @@ class DynamicTorqueDataset(Dataset):
     def _fit_scaler(self):
         """
         训练集：拟合标准化器
-        对所有特征进行标准化（Time, Torque, signal_0, signal_1, signal_2）
+        ⚠️ 仅对signal_0, signal_1, signal_2进行标准化
+        Time(s)和Torque列已排除（Time全是常数，Torque不应作为特征）
         """
         print("Fitting StandardScaler on training data...")
         all_data = []
         for df in self.data_list:
             if self.use_all_features:
-                data = df[['Time(s)', 'Torque', 'signal_0', 'signal_1', 'signal_2']].values
+                # ✅ 仅使用signal列，不使用Time和Torque
+                data = df[['signal_0', 'signal_1', 'signal_2']].values
             else:
                 data = df[[self.signal_type]].values
             all_data.append(data)
@@ -264,7 +266,7 @@ class DynamicTorqueDataset(Dataset):
         self.scaler = StandardScaler()
         self.scaler.fit(all_data)
 
-        print(f"✅ StandardScaler fitted:")
+        print(f"✅ StandardScaler fitted (仅signal列):")
         print(f"   Mean: {self.scaler.mean_}")
         print(f"   Std: {self.scaler.scale_}")
 
@@ -291,7 +293,8 @@ class DynamicTorqueDataset(Dataset):
 
             # 提取特征
             if self.use_all_features:
-                features = df[['Time(s)', 'Torque', 'signal_0', 'signal_1', 'signal_2']].values
+                # ✅ 仅使用signal列，不使用Time和Torque
+                features = df[['signal_0', 'signal_1', 'signal_2']].values
             else:
                 features = df[[self.signal_type]].values
 
@@ -304,8 +307,8 @@ class DynamicTorqueDataset(Dataset):
 
             # ✅ 对目标信号进行标准化（使用signal_1对应的scaler参数）
             if self.scaler is not None:
-                # signal_1是第4列（索引3：Time, Torque, signal_0, signal_1, signal_2）
-                signal_idx = 3 if self.use_all_features else 0
+                # signal_1是第2列（索引1：signal_0, signal_1, signal_2）
+                signal_idx = 1 if self.use_all_features else 0
                 target = (target - self.scaler.mean_[signal_idx]) / self.scaler.scale_[signal_idx]
 
             # 使用滑动窗口创建多个样本
