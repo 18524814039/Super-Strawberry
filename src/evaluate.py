@@ -200,27 +200,28 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
     with torch.no_grad():
         for inputs, targets in data_loader:
             inputs_device = inputs.to(device)
-            outputs = model(inputs_device)
+            targets_device = targets.to(device)
+            outputs = model(inputs_device, targets=targets_device)
 
             all_inputs.append(inputs.cpu().numpy())
             all_predictions.append(outputs.cpu().numpy())
             all_targets.append(targets.numpy())
 
-    # 合并所有批次
-    inputs = np.concatenate(all_inputs, axis=0)
-    predictions = np.concatenate(all_predictions, axis=0)
-    targets = np.concatenate(all_targets, axis=0)
+    # ✅ 动态长度处理：将所有样本展平成一维数组用于计算指标
+    # 而不是尝试concatenate不同长度的数组
+    predictions_flat = np.concatenate([pred.flatten() for pred in all_predictions])
+    targets_flat = np.concatenate([tgt.flatten() for tgt in all_targets])
 
     # 计算指标
-    mse = mean_squared_error(targets.flatten(), predictions.flatten())
+    mse = mean_squared_error(targets_flat, predictions_flat)
     rmse = np.sqrt(mse)
-    mae = mean_absolute_error(targets.flatten(), predictions.flatten())
-    r2 = r2_score(targets.flatten(), predictions.flatten())
+    mae = mean_absolute_error(targets_flat, predictions_flat)
+    r2 = r2_score(targets_flat, predictions_flat)
 
     # MAPE
-    mask = targets.flatten() != 0
-    mape = np.mean(np.abs((targets.flatten()[mask] - predictions.flatten()[mask]) /
-                          targets.flatten()[mask])) * 100 if mask.sum() > 0 else float('inf')
+    mask = targets_flat != 0
+    mape = np.mean(np.abs((targets_flat[mask] - predictions_flat[mask]) /
+                          targets_flat[mask])) * 100 if mask.sum() > 0 else float('inf')
 
     metrics = {
         'MSE': mse,
@@ -241,12 +242,30 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
     # 可视化
     print("\nGenerating visualizations...")
 
+    # 📊 从第一个batch中选择样本进行可视化（所有样本长度相同）
+    sample_inputs = all_inputs[0]
+    sample_predictions = all_predictions[0]
+    sample_targets = all_targets[0]
+
     # 预测对比图
-    plot_predictions(inputs, predictions, targets, num_samples=4,
+    plot_predictions(sample_inputs, sample_predictions, sample_targets, num_samples=min(4, len(sample_inputs)),
                     save_path=os.path.join(save_dir, 'predictions.png'))
 
-    # 误差分布图
-    plot_error_distribution(predictions, targets,
+    # 误差分布图（使用所有样本）
+    # 将所有batch的predictions和targets重塑为2D数组
+    all_predictions_2d = np.concatenate([pred.reshape(pred.shape[0], -1) for pred in all_predictions], axis=0)
+    all_targets_2d = np.concatenate([tgt.reshape(tgt.shape[0], -1) for tgt in all_targets], axis=0)
+
+    # 找到所有样本中的最小长度
+    min_seq_len = min(pred.shape[1] for pred in all_predictions)
+
+    # 截断到最小长度以便可视化
+    predictions_for_plot = np.array([pred[:, :min_seq_len] for pred in all_predictions])
+    targets_for_plot = np.array([tgt[:, :min_seq_len] for tgt in all_targets])
+    predictions_for_plot = predictions_for_plot.reshape(-1, min_seq_len)
+    targets_for_plot = targets_for_plot.reshape(-1, min_seq_len)
+
+    plot_error_distribution(predictions_for_plot, targets_for_plot,
                            save_path=os.path.join(save_dir, 'error_distribution.png'))
 
     # 保存指标到文件
@@ -254,7 +273,7 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
     metrics_df.to_csv(os.path.join(save_dir, 'metrics.csv'), index=False)
     print(f"\nMetrics saved to {os.path.join(save_dir, 'metrics.csv')}")
 
-    return metrics, predictions, targets, inputs
+    return metrics, all_predictions, all_targets, all_inputs
 
 
 def predict_single_sequence(model, input_sequence, device='cuda'):
