@@ -50,17 +50,18 @@ class LSTMPredictor(nn.Module):
         # 输出层
         self.fc = nn.Linear(hidden_dim, 1)
 
-    def forward(self, x, target_len=None, targets=None):
+    def forward(self, x, target_len=None, targets=None, teacher_forcing_ratio=0.5):
         """
-        前向传播
+        前向传播（支持Teacher Forcing）
 
         Args:
             x: 输入序列 [batch_size, input_length, input_dim]
             target_len: 目标序列长度（显式指定，优先级最高）
-            targets: 目标序列 [batch_size, target_length]（用于自动推断长度）
+            targets: 目标序列 [batch_size, target_length]（用于Teacher Forcing和自动推断长度）
+            teacher_forcing_ratio: Teacher Forcing比例（训练时使用，0=纯自回归，1=纯teacher forcing）
 
         Returns:
-            predictions: [batch_size, output_length, 1]
+            predictions: [batch_size, output_length]
         """
         batch_size = x.size(0)
 
@@ -80,14 +81,19 @@ class LSTMPredictor(nn.Module):
         # 存储所有预测
         predictions = []
 
-        # 自回归解码
-        for _ in range(target_len):
+        # ✅ 自回归解码（支持Teacher Forcing）
+        for t in range(target_len):
             decoder_output, (hidden, cell) = self.decoder(decoder_input, (hidden, cell))
             prediction = self.fc(decoder_output)  # [batch_size, 1, 1]
             predictions.append(prediction)
 
-            # 下一个输入是当前预测
-            decoder_input = prediction
+            # 决定下一个输入：Teacher Forcing vs 预测值
+            if self.training and targets is not None and torch.rand(1).item() < teacher_forcing_ratio:
+                # ✅ 训练模式 + 有targets + 概率触发 → 使用真实值（Teacher Forcing）
+                decoder_input = targets[:, t:t+1].unsqueeze(-1)  # [batch_size, 1, 1]
+            else:
+                # 推理模式 或 不使用Teacher Forcing → 使用预测值
+                decoder_input = prediction
 
         # 拼接所有预测
         predictions = torch.cat(predictions, dim=1)  # [batch_size, target_len, 1]

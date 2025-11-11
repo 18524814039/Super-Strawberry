@@ -212,7 +212,7 @@ class DynamicTorqueDataset(Dataset):
 
     def __init__(self, csv_files, input_ratio=2/3, output_ratio=1/3,
                  signal_type='signal_1', use_all_features=True,
-                 min_length=1000, bucket_size=500, step_size=100):
+                 min_length=1000, bucket_size=500, step_size=100, scaler=None):
         self.input_ratio = input_ratio
         self.output_ratio = output_ratio
         self.signal_type = signal_type
@@ -220,6 +220,7 @@ class DynamicTorqueDataset(Dataset):
         self.min_length = min_length
         self.bucket_size = bucket_size
         self.step_size = step_size
+        self.scaler = scaler  # ✅ 数据标准化器
 
         # 加载所有CSV文件
         self.data_list = []
@@ -232,11 +233,40 @@ class DynamicTorqueDataset(Dataset):
 
         print(f"Loaded {len(self.data_list)} CSV files (min_length >= {min_length})")
 
+        # ✅ 数据标准化：如果是训练集创建scaler，测试集使用训练集的scaler
+        if self.scaler is None and len(self.data_list) > 0:
+            self._fit_scaler()
+
         # 创建序列样本（动态长度）
         self.samples = self._create_dynamic_samples()
 
         # 创建长度到样本索引的映射（用于分组batching）
         self._create_length_buckets()
+
+    def _fit_scaler(self):
+        """
+        训练集：拟合标准化器
+        对所有特征进行标准化（Time, Torque, signal_0, signal_1, signal_2）
+        """
+        print("Fitting StandardScaler on training data...")
+        all_data = []
+        for df in self.data_list:
+            if self.use_all_features:
+                data = df[['Time(s)', 'Torque', 'signal_0', 'signal_1', 'signal_2']].values
+            else:
+                data = df[[self.signal_type]].values
+            all_data.append(data)
+
+        # 合并所有数据
+        all_data = np.vstack(all_data)
+
+        # 创建并拟合scaler
+        self.scaler = StandardScaler()
+        self.scaler.fit(all_data)
+
+        print(f"✅ StandardScaler fitted:")
+        print(f"   Mean: {self.scaler.mean_}")
+        print(f"   Std: {self.scaler.scale_}")
 
     def _create_dynamic_samples(self):
         """从CSV文件中创建动态长度的训练样本"""
@@ -265,8 +295,18 @@ class DynamicTorqueDataset(Dataset):
             else:
                 features = df[[self.signal_type]].values
 
-            # 提取目标信号
+            # ✅ 应用标准化
+            if self.scaler is not None:
+                features = self.scaler.transform(features)
+
+            # 提取目标信号（也需要标准化）
             target = df[self.signal_type].values
+
+            # ✅ 对目标信号进行标准化（使用signal_1对应的scaler参数）
+            if self.scaler is not None:
+                # signal_1是第4列（索引3：Time, Torque, signal_0, signal_1, signal_2）
+                signal_idx = 3 if self.use_all_features else 0
+                target = (target - self.scaler.mean_[signal_idx]) / self.scaler.scale_[signal_idx]
 
             # 使用滑动窗口创建多个样本
             for i in range(0, len(df) - total_length + 1, self.step_size):
@@ -489,7 +529,7 @@ def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
     print(f"  训练文件: {len(train_files)}")
     print(f"  测试文件: {len(test_files)}")
 
-    # 创建动态数据集
+    # 创建动态数据集（训练集会自动创建scaler）
     print("\n创建训练集...")
     train_dataset = DynamicTorqueDataset(
         train_files,
@@ -499,7 +539,8 @@ def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
         use_all_features=use_all_features,
         min_length=min_length,
         bucket_size=bucket_size,
-        step_size=step_size
+        step_size=step_size,
+        scaler=None  # 训练集创建新的scaler
     )
 
     print("\n创建测试集...")
@@ -511,7 +552,8 @@ def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
         use_all_features=use_all_features,
         min_length=min_length,
         bucket_size=bucket_size,
-        step_size=step_size
+        step_size=step_size,
+        scaler=train_dataset.scaler  # ✅ 测试集使用训练集的scaler
     )
 
     # 创建批次采样器

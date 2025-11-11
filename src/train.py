@@ -27,12 +27,13 @@ class Trainer:
     """
 
     def __init__(self, model, train_loader, test_loader,
-                 device='cuda', learning_rate=0.001, save_dir='./models'):
+                 device='cuda', learning_rate=0.001, save_dir='./models', teacher_forcing_ratio=0.5):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.device = device
         self.save_dir = save_dir
+        self.teacher_forcing_ratio = teacher_forcing_ratio  # ✅ Teacher Forcing比例
 
         # 损失函数
         self.criterion = nn.MSELoss()
@@ -66,9 +67,9 @@ class Trainer:
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
 
-            # 前向传播（传递 targets 以支持动态长度）
+            # 前向传播（传递 targets 以支持动态长度和Teacher Forcing）
             self.optimizer.zero_grad()
-            outputs = self.model(inputs, targets=targets)
+            outputs = self.model(inputs, targets=targets, teacher_forcing_ratio=self.teacher_forcing_ratio)
 
             # 计算损失
             loss = self.criterion(outputs, targets)
