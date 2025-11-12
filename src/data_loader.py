@@ -302,19 +302,33 @@ class DynamicTorqueDataset(Dataset):
             if self.scaler is not None:
                 features = self.scaler.transform(features)
 
-            # 提取目标信号（也需要标准化）
+            # 提取目标信号
             target = df[self.signal_type].values
 
-            # ✅ 对目标信号进行标准化（使用signal_1对应的scaler参数）
+            # ✅ 【关键改进】计算目标序列的差分（residual learning）
+            # 论文建议：预测变化量而不是绝对值，这样模型更容易学习
+            # target_diff[t] = target[t+1] - target[t]
+            target_diff = np.diff(target, prepend=target[0])  # 第一个值保持不变（或用0）
+
+            # ✅ 对差分进行标准化（而不是对原始值标准化）
             if self.scaler is not None:
                 # signal_1是第2列（索引1：signal_0, signal_1, signal_2）
                 signal_idx = 1 if self.use_all_features else 0
-                target = (target - self.scaler.mean_[signal_idx]) / self.scaler.scale_[signal_idx]
+                # 注意：这里我们标准化的是差分值，不是原始值
+                target_diff = (target_diff - np.mean(target_diff)) / (np.std(target_diff) + 1e-8)
 
             # 使用滑动窗口创建多个样本
             for i in range(0, len(df) - total_length + 1, self.step_size):
                 input_seq = features[i:i + input_length]
-                output_seq = target[i + input_length:i + total_length]
+                # ✅ 输出序列使用差分值
+                output_seq = target_diff[i + input_length:i + total_length]
+
+                # ✅ 保存最后一个输入值（用于推理时重建绝对值）
+                # 这是标准化后的值
+                if self.scaler is not None:
+                    last_input_value = features[i + input_length - 1, signal_idx]
+                else:
+                    last_input_value = df[self.signal_type].values[i + input_length - 1]
 
                 # ✅ 使用粗粒度分组：按总长度的bucket_size分组，而不是精确匹配
                 # 这样可以将相似长度的样本组合到一起
@@ -322,11 +336,12 @@ class DynamicTorqueDataset(Dataset):
 
                 samples.append({
                     'input': input_seq,
-                    'output': output_seq,
+                    'output': output_seq,  # ✅ 现在是差分值，不是绝对值
                     'input_length': input_length,
                     'output_length': output_length,
                     'total_length': total_length,
-                    'length_bucket': length_bucket  # 按区间分组
+                    'length_bucket': length_bucket,  # 按区间分组
+                    'last_input_value': last_input_value  # ✅ 保存用于重建
                 })
 
         # 打印长度统计信息
@@ -366,9 +381,10 @@ class DynamicTorqueDataset(Dataset):
 
         # 转换为tensor
         input_tensor = torch.FloatTensor(sample['input'])
-        output_tensor = torch.FloatTensor(sample['output'])
+        output_tensor = torch.FloatTensor(sample['output'])  # ✅ 差分值
+        last_value_tensor = torch.FloatTensor([sample['last_input_value']])  # ✅ 用于重建
 
-        return input_tensor, output_tensor
+        return input_tensor, output_tensor, last_value_tensor
 
     def get_length_bucket(self, idx):
         """获取样本的长度桶标识"""
@@ -380,7 +396,7 @@ def collate_dynamic_batch(batch):
     自定义collate函数，处理同一bucket内不同长度的样本
     使用padding对齐到batch内的最大长度
     """
-    inputs, outputs = zip(*batch)
+    inputs, outputs, last_values = zip(*batch)
 
     # 找到batch内的最大长度
     max_input_len = max(inp.size(0) for inp in inputs)
@@ -406,8 +422,9 @@ def collate_dynamic_batch(batch):
     # Stack成batch
     inputs_batch = torch.stack(padded_inputs, dim=0)
     outputs_batch = torch.stack(padded_outputs, dim=0)
+    last_values_batch = torch.stack(last_values, dim=0)  # ✅ [batch_size, 1]
 
-    return inputs_batch, outputs_batch
+    return inputs_batch, outputs_batch, last_values_batch
 
 
 class BucketBatchSampler(Sampler):

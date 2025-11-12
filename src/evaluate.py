@@ -35,23 +35,27 @@ def evaluate_baseline(data_loader, device='cuda'):
     all_predictions = []
     all_targets = []
 
-    for inputs, targets in data_loader:
-        # 提取 signal_1
-        # inputs shape: [batch_size, input_length, features]
-        # ✅ 现在只有3个特征(signal_0, signal_1, signal_2)，signal_1是索引1
+    for inputs, targets, last_values in data_loader:  # ✅ 解包third value
+        # ✅ last_values是标准化后的最后输入值
+        # targets是差分值，需要重建成绝对值来评估
 
-        # 获取输入序列的最后一个signal_1值
-        last_signal1 = inputs[:, -1, 1]  # [batch_size], 索引1是signal_1
-
-        # 用这个值预测所有输出
         batch_size = inputs.size(0)
         output_length = targets.size(1)
 
-        # Baseline预测：所有输出都是最后一个输入值
-        baseline_pred = last_signal1.unsqueeze(1).expand(batch_size, output_length)
+        # ✅ 重建targets的绝对值
+        # targets是差分值，需要累积求和 + last_value
+        targets_abs = torch.zeros_like(targets)
+        current_value = last_values.squeeze(-1)  # [batch_size]
+
+        for t in range(output_length):
+            current_value = current_value + targets[:, t]  # 累积加上差分
+            targets_abs[:, t] = current_value
+
+        # Baseline预测：所有输出都是最后一个输入值（持久化预测）
+        baseline_pred = last_values.squeeze(-1).unsqueeze(1).expand(batch_size, output_length)
 
         all_predictions.append(baseline_pred.numpy())
-        all_targets.append(targets.numpy())
+        all_targets.append(targets_abs.numpy())  # ✅ 使用重建的绝对值
 
     # 展平所有预测和目标
     predictions_flat = np.concatenate([pred.flatten() for pred in all_predictions])
@@ -265,25 +269,42 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
     os.makedirs(save_dir, exist_ok=True)
 
     model.eval()
-    all_predictions = []
-    all_targets = []
+    all_predictions_abs = []  # ✅ 重建后的绝对值预测
+    all_targets_abs = []      # ✅ 重建后的绝对值目标
     all_inputs = []
 
     print("Generating predictions...")
     with torch.no_grad():
-        for inputs, targets in data_loader:
+        for inputs, targets, last_values in data_loader:  # ✅ 解包third value
             inputs_device = inputs.to(device)
             targets_device = targets.to(device)
-            outputs = model(inputs_device, targets=targets_device)
+            outputs = model(inputs_device, targets=targets_device)  # 输出是差分值
+
+            # ✅ 重建绝对值预测
+            # outputs是差分值，需要累积求和 + last_value
+            batch_size, output_length = outputs.shape
+            predictions_abs = torch.zeros_like(outputs)
+            current_pred = last_values.squeeze(-1)  # [batch_size]
+
+            for t in range(output_length):
+                current_pred = current_pred + outputs[:, t]
+                predictions_abs[:, t] = current_pred
+
+            # ✅ 重建绝对值目标（同样的方式）
+            targets_abs = torch.zeros_like(targets)
+            current_target = last_values.squeeze(-1)
+
+            for t in range(output_length):
+                current_target = current_target + targets[:, t]
+                targets_abs[:, t] = current_target
 
             all_inputs.append(inputs.cpu().numpy())
-            all_predictions.append(outputs.cpu().numpy())
-            all_targets.append(targets.numpy())
+            all_predictions_abs.append(predictions_abs.cpu().numpy())
+            all_targets_abs.append(targets_abs.cpu().numpy())
 
     # ✅ 动态长度处理：将所有样本展平成一维数组用于计算指标
-    # 而不是尝试concatenate不同长度的数组
-    predictions_flat = np.concatenate([pred.flatten() for pred in all_predictions])
-    targets_flat = np.concatenate([tgt.flatten() for tgt in all_targets])
+    predictions_flat = np.concatenate([pred.flatten() for pred in all_predictions_abs])
+    targets_flat = np.concatenate([tgt.flatten() for tgt in all_targets_abs])
 
     # 计算指标
     mse = mean_squared_error(targets_flat, predictions_flat)
@@ -317,8 +338,8 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
 
     # 📊 从第一个batch中选择样本进行可视化（所有样本长度相同）
     sample_inputs = all_inputs[0]
-    sample_predictions = all_predictions[0]
-    sample_targets = all_targets[0]
+    sample_predictions = all_predictions_abs[0]  # ✅ 使用重建的绝对值
+    sample_targets = all_targets_abs[0]          # ✅ 使用重建的绝对值
 
     # 预测对比图
     plot_predictions(sample_inputs, sample_predictions, sample_targets, num_samples=min(4, len(sample_inputs)),
@@ -326,12 +347,12 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
 
     # 误差分布图（使用所有样本）
     # 找到所有batch中最小的序列长度
-    min_seq_len = min(pred.shape[1] for pred in all_predictions)
+    min_seq_len = min(pred.shape[1] for pred in all_predictions_abs)
 
     # 截断所有batch到最小长度，然后合并
     predictions_for_plot = []
     targets_for_plot = []
-    for pred, tgt in zip(all_predictions, all_targets):
+    for pred, tgt in zip(all_predictions_abs, all_targets_abs):  # ✅ 使用绝对值
         predictions_for_plot.append(pred[:, :min_seq_len])
         targets_for_plot.append(tgt[:, :min_seq_len])
 
@@ -346,7 +367,7 @@ def evaluate_model(model, data_loader, device='cuda', save_dir='./results'):
     metrics_df.to_csv(os.path.join(save_dir, 'metrics.csv'), index=False)
     print(f"\nMetrics saved to {os.path.join(save_dir, 'metrics.csv')}")
 
-    return metrics, all_predictions, all_targets, all_inputs
+    return metrics, all_predictions_abs, all_targets_abs, all_inputs  # ✅ 返回绝对值
 
 
 def predict_single_sequence(model, input_sequence, device='cuda'):

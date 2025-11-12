@@ -63,15 +63,18 @@ class Trainer:
         num_batches = 0
 
         pbar = tqdm(self.train_loader, desc='Training')
-        for inputs, targets in pbar:
+        for inputs, targets, last_values in pbar:  # ✅ 解包third value
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
+            # last_values不需要在训练中使用，因为targets已经是差分值
+            # last_values仅在评估时用于重建绝对值
 
             # 前向传播（传递 targets 以支持动态长度和Teacher Forcing）
+            # ✅ 现在targets是差分值，模型学习预测差分
             self.optimizer.zero_grad()
             outputs = self.model(inputs, targets=targets, teacher_forcing_ratio=self.teacher_forcing_ratio)
 
-            # 计算损失
+            # 计算损失（基于差分值的MSE）
             loss = self.criterion(outputs, targets)
 
             # 反向传播
@@ -99,12 +102,13 @@ class Trainer:
         num_batches = 0
 
         with torch.no_grad():
-            for inputs, targets in tqdm(self.test_loader, desc='Evaluating'):
+            for inputs, targets, last_values in tqdm(self.test_loader, desc='Evaluating'):  # ✅ 解包
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
+                # last_values在这里也不用，因为我们只是计算差分值的MSE
 
                 outputs = self.model(inputs, targets=targets)
-                loss = self.criterion(outputs, targets)
+                loss = self.criterion(outputs, targets)  # 基于差分值的损失
 
                 total_loss += loss.item()
                 num_batches += 1
@@ -257,23 +261,27 @@ def predict_batch(model, data_loader, device='cuda'):
         device: 设备
 
     Returns:
-        predictions: 所有预测结果
-        targets: 所有真实值
+        predictions: 所有预测结果（差分值）
+        targets: 所有真实值（差分值）
+        last_values: 用于重建的最后输入值
     """
     model.eval()
     all_predictions = []
     all_targets = []
+    all_last_values = []
 
     with torch.no_grad():
-        for inputs, targets in tqdm(data_loader, desc='Predicting'):
+        for inputs, targets, last_values in tqdm(data_loader, desc='Predicting'):  # ✅ 解包
             inputs = inputs.to(device)
             targets_device = targets.to(device)
             outputs = model(inputs, targets=targets_device)
 
             all_predictions.append(outputs.cpu().numpy())
             all_targets.append(targets.numpy())
+            all_last_values.append(last_values.numpy())  # ✅ 保存last_values
 
     predictions = np.concatenate(all_predictions, axis=0)
     targets = np.concatenate(all_targets, axis=0)
+    last_values = np.concatenate(all_last_values, axis=0)
 
-    return predictions, targets
+    return predictions, targets, last_values
