@@ -79,7 +79,7 @@ def main():
         train_split=TRAIN_SPLIT,
         seq_len=SEQ_LEN,
         pred_len=PRED_LEN,
-        signal_type='signal_1',
+        signal_type='Fy',
         use_all_features=True,
         batch_size=BATCH_SIZE,
         step_size=STEP_SIZE

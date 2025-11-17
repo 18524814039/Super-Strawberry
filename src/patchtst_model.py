@@ -131,7 +131,7 @@ class PatchTST(nn.Module):
         patch_len: Patch长度
         stride: Patch步长
         dropout: Dropout率
-        target_dim: 目标维度（默认为1，只预测signal_1）
+        target_dim: 目标维度（默认为1，只预测Fy）
     """
     def __init__(
         self,
@@ -232,9 +232,9 @@ class PatchTST(nn.Module):
         # output: [batch_size, n_vars, pred_len]
         output = self.head(enc_out)
 
-        # 如果只预测一个变量（signal_1）
+        # 如果只预测一个变量（Fy）
         if self.target_dim == 1:
-            # 取signal_1 (索引1)
+            # 取Fy (索引1，对应Fx=0, Fy=1, Fz=2)
             output = output[:, 1, :]  # [batch_size, pred_len]
         else:
             # [batch_size, pred_len, n_vars]
@@ -269,7 +269,7 @@ def get_patchtst_model(
     - 长序列(>3000): patch_len=64, stride=32
 
     Args:
-        input_dim: 输入特征数 (3: signal_0, signal_1, signal_2)
+        input_dim: 输入特征数 (3: Fx, Fy, Fz)
         seq_len: 输入序列长度
         pred_len: 预测长度
         d_model: Transformer维度 (推荐: 128-512)
@@ -279,7 +279,7 @@ def get_patchtst_model(
         patch_len: Patch长度
         stride: Patch步长
         dropout: Dropout率
-        target_dim: 目标维度 (1表示只预测signal_1)
+        target_dim: 目标维度 (1表示只预测Fy)
     """
     model = PatchTST(
         input_dim=input_dim,

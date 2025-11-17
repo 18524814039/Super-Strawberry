@@ -29,7 +29,7 @@ def evaluate_baseline(data_loader, device='cuda'):
     print("\n" + "=" * 60)
     print("📊 评估 Persistence Baseline")
     print("=" * 60)
-    print("策略: 用输入序列最后一个 signal_1 值预测所有输出")
+    print("策略: 用输入序列最后一个 Fy 值预测所有输出")
     print("-" * 60)
 
     all_predictions = []
@@ -155,9 +155,9 @@ def plot_predictions(inputs, predictions, targets, num_samples=4, save_path=None
         input_time = np.arange(0, input_len)
         output_time = np.arange(input_len, input_len + output_len)
 
-        # 绘制输入序列（使用signal_1）
+        # 绘制输入序列（使用Fy）
         if inputs.shape[2] > 1:
-            # ✅ 只有3个特征(signal_0, signal_1, signal_2)，signal_1是索引1
+            # ✅ 只有3个特征(Fx, Fy, Fz)，Fy是索引1
             input_signal = inputs[i, :, 1]
         else:
             input_signal = inputs[i, :, 0]

@@ -211,7 +211,7 @@ class DynamicTorqueDataset(Dataset):
     """
 
     def __init__(self, csv_files, input_ratio=2/3, output_ratio=1/3,
-                 signal_type='signal_1', use_all_features=True,
+                 signal_type='Fy', use_all_features=True,
                  min_length=1000, bucket_size=500, step_size=100, scaler=None):
         self.input_ratio = input_ratio
         self.output_ratio = output_ratio
@@ -246,15 +246,15 @@ class DynamicTorqueDataset(Dataset):
     def _fit_scaler(self):
         """
         训练集：拟合标准化器
-        ⚠️ 仅对signal_0, signal_1, signal_2进行标准化
-        Time(s)和Torque列已排除（Time全是常数，Torque不应作为特征）
+        ⚠️ 仅对Fx, Fy, Fz进行标准化
+        Time(s)和T(Torque)列已排除（Time全是常数，Torque不应作为特征）
         """
         print("Fitting StandardScaler on training data...")
         all_data = []
         for df in self.data_list:
             if self.use_all_features:
-                # ✅ 仅使用signal列，不使用Time和Torque
-                data = df[['signal_0', 'signal_1', 'signal_2']].values
+                # ✅ 仅使用力传感器信号列，不使用Time和T(Torque)
+                data = df[['Fx', 'Fy', 'Fz']].values
             else:
                 data = df[[self.signal_type]].values
             all_data.append(data)
@@ -293,8 +293,8 @@ class DynamicTorqueDataset(Dataset):
 
             # 提取特征
             if self.use_all_features:
-                # ✅ 仅使用signal列，不使用Time和Torque
-                features = df[['signal_0', 'signal_1', 'signal_2']].values
+                # ✅ 仅使用力传感器列 (Fx, Fy, Fz)，不使用Time和T(Torque)
+                features = df[['Fx', 'Fy', 'Fz']].values
             else:
                 features = df[[self.signal_type]].values
 
@@ -477,7 +477,7 @@ class BucketBatchSampler(Sampler):
 
 def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
                       input_ratio=2/3, output_ratio=1/3,
-                      signal_type='signal_1', use_all_features=True,
+                      signal_type='Fy', use_all_features=True,
                       batch_size=32, min_length=1000, bucket_size=500, step_size=100):
     """
     加载数据并创建训练集和测试集（动态长度模式）
@@ -507,21 +507,21 @@ def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
 
     print(f"Found {len(csv_files)} CSV files")
 
-    # 📦 按瓶子编号分组（基于文件名格式 Data_a_b_open.csv）
+    # 📦 按瓶子编号分组（基于文件名格式 processed_Data_a_b_open.csv）
     # 这样可以避免同一瓶子的数据同时出现在训练集和测试集中，防止数据泄漏
     bottle_to_files = defaultdict(list)
     unmatched_files = []
 
     for csv_file in csv_files:
         filename = os.path.basename(csv_file)
-        match = re.match(r'Data_(\d+)_\d+_open\.csv', filename)
+        match = re.match(r'processed_Data_(\d+)_\d+_open\.csv', filename)
         if match:
             bottle_num = int(match.group(1))
             bottle_to_files[bottle_num].append(csv_file)
         else:
             # 不匹配模式的文件放入测试集
             unmatched_files.append(csv_file)
-            print(f"Warning: {filename} doesn't match pattern Data_a_b_open.csv, will be added to test set")
+            print(f"Warning: {filename} doesn't match pattern processed_Data_a_b_open.csv, will be added to test set")
 
     # 按瓶子编号划分训练集和测试集
     bottles = sorted(bottle_to_files.keys())
@@ -624,7 +624,7 @@ class FixedLengthTorqueDataset(Dataset):
     """
 
     def __init__(self, csv_files, seq_len=2000, pred_len=1000,
-                 signal_type='signal_1', use_all_features=True,
+                 signal_type='Fy', use_all_features=True,
                  scaler=None, step_size=500):
         self.seq_len = seq_len
         self.pred_len = pred_len
@@ -657,12 +657,12 @@ class FixedLengthTorqueDataset(Dataset):
         self.samples = self._create_fixed_samples()
 
     def _fit_scaler(self):
-        """拟合标准化器（仅对signal列）"""
+        """拟合标准化器（仅对Fx, Fy, Fz列）"""
         print("Fitting StandardScaler on training data...")
         all_data = []
         for df in self.data_list:
             if self.use_all_features:
-                data = df[['signal_0', 'signal_1', 'signal_2']].values
+                data = df[['Fx', 'Fy', 'Fz']].values
             else:
                 data = df[[self.signal_type]].values
             all_data.append(data)
@@ -685,7 +685,7 @@ class FixedLengthTorqueDataset(Dataset):
 
             # 提取特征
             if self.use_all_features:
-                features = df[['signal_0', 'signal_1', 'signal_2']].values
+                features = df[['Fx', 'Fy', 'Fz']].values
             else:
                 features = df[[self.signal_type]].values
 
@@ -752,7 +752,7 @@ class FixedLengthTorqueDataset(Dataset):
 
 def load_data_for_patchtst(data_dir, pattern='*.csv', train_split=0.8,
                             seq_len=2000, pred_len=1000,
-                            signal_type='signal_1', use_all_features=True,
+                            signal_type='Fy', use_all_features=True,
                             batch_size=32, step_size=500):
     """
     为PatchTST加载固定长度数据
@@ -785,12 +785,13 @@ def load_data_for_patchtst(data_dir, pattern='*.csv', train_split=0.8,
 
     for csv_file in csv_files:
         filename = os.path.basename(csv_file)
-        match = re.match(r'Data_(\d+)_\d+_open\.csv', filename)
+        match = re.match(r'processed_Data_(\d+)_\d+_open\.csv', filename)
         if match:
             bottle_num = int(match.group(1))
             bottle_to_files[bottle_num].append(csv_file)
         else:
             unmatched_files.append(csv_file)
+            print(f"Warning: {filename} doesn't match pattern processed_Data_a_b_open.csv")
 
     # 划分训练集和测试集
     bottles = sorted(bottle_to_files.keys())
