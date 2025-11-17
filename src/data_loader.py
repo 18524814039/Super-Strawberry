@@ -600,3 +600,261 @@ def load_data_dynamic(data_dir, pattern='*.csv', train_split=0.8,
     print(f"测试批次数: {len(test_loader)}")
 
     return train_loader, test_loader
+
+
+# ==================== PatchTST固定长度数据加载器 ====================
+
+class FixedLengthTorqueDataset(Dataset):
+    """
+    固定长度机械臂扭矩时间序列数据集（专为PatchTST设计）
+
+    PatchTST需要固定的输入和输出长度，因此：
+    - 过长的序列会被截断
+    - 过短的序列会被padding
+    - 保留Residual Learning（返回差分值和last_value）
+
+    Args:
+        csv_files: CSV文件路径列表
+        seq_len: 固定输入序列长度
+        pred_len: 固定预测长度
+        signal_type: 要预测的信号类型
+        use_all_features: 是否使用所有特征
+        scaler: 数据标准化器
+        step_size: 滑动窗口步长（用于数据增强）
+    """
+
+    def __init__(self, csv_files, seq_len=2000, pred_len=1000,
+                 signal_type='signal_1', use_all_features=True,
+                 scaler=None, step_size=500):
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+        self.signal_type = signal_type
+        self.use_all_features = use_all_features
+        self.scaler = scaler
+        self.step_size = step_size
+
+        # 最小长度要求
+        self.min_length = seq_len + pred_len
+
+        # 加载所有CSV文件
+        self.data_list = []
+        skipped = 0
+        for csv_file in csv_files:
+            df = pd.read_csv(csv_file)
+            df = df.iloc[1:].reset_index(drop=True)  # 跳过第一行数据
+            if len(df) >= self.min_length:
+                self.data_list.append(df)
+            else:
+                skipped += 1
+
+        print(f"Loaded {len(self.data_list)} CSV files (skipped {skipped} files < {self.min_length} steps)")
+
+        # 拟合或使用scaler
+        if self.scaler is None and len(self.data_list) > 0:
+            self._fit_scaler()
+
+        # 创建固定长度样本
+        self.samples = self._create_fixed_samples()
+
+    def _fit_scaler(self):
+        """拟合标准化器（仅对signal列）"""
+        print("Fitting StandardScaler on training data...")
+        all_data = []
+        for df in self.data_list:
+            if self.use_all_features:
+                data = df[['signal_0', 'signal_1', 'signal_2']].values
+            else:
+                data = df[[self.signal_type]].values
+            all_data.append(data)
+
+        all_data = np.vstack(all_data)
+        self.scaler = StandardScaler()
+        self.scaler.fit(all_data)
+
+        print(f"✅ StandardScaler fitted:")
+        print(f"   Mean: {self.scaler.mean_}")
+        print(f"   Std: {self.scaler.scale_}")
+
+    def _create_fixed_samples(self):
+        """创建固定长度样本"""
+        samples = []
+        total_length = self.seq_len + self.pred_len
+
+        for df in self.data_list:
+            csv_length = len(df)
+
+            # 提取特征
+            if self.use_all_features:
+                features = df[['signal_0', 'signal_1', 'signal_2']].values
+            else:
+                features = df[[self.signal_type]].values
+
+            # 标准化
+            if self.scaler is not None:
+                features = self.scaler.transform(features)
+
+            # 提取目标信号
+            target = df[self.signal_type].values
+
+            # 计算差分
+            target_diff = np.diff(target, prepend=target[0])
+
+            # 标准化差分
+            if self.scaler is not None:
+                target_diff = (target_diff - np.mean(target_diff)) / (np.std(target_diff) + 1e-8)
+
+            # 使用滑动窗口创建样本
+            max_start = max(0, csv_length - total_length)
+            for start_idx in range(0, max_start + 1, self.step_size):
+                end_idx = start_idx + total_length
+
+                # 提取输入和输出
+                input_seq = features[start_idx:start_idx + self.seq_len]
+                output_seq = target_diff[start_idx + self.seq_len:end_idx]
+
+                # 获取last_input_value
+                if self.use_all_features:
+                    signal_idx = 1  # signal_1的索引
+                    last_input_value = features[start_idx + self.seq_len - 1, signal_idx]
+                else:
+                    last_input_value = features[start_idx + self.seq_len - 1, 0]
+
+                # Padding（如果需要）
+                if len(input_seq) < self.seq_len:
+                    pad_len = self.seq_len - len(input_seq)
+                    input_seq = np.pad(input_seq, ((0, pad_len), (0, 0)), mode='constant')
+
+                if len(output_seq) < self.pred_len:
+                    pad_len = self.pred_len - len(output_seq)
+                    output_seq = np.pad(output_seq, (0, pad_len), mode='constant')
+
+                samples.append({
+                    'input': input_seq[:self.seq_len],  # 确保长度正确
+                    'output': output_seq[:self.pred_len],
+                    'last_input_value': last_input_value
+                })
+
+        print(f"Created {len(samples)} fixed-length samples (seq_len={self.seq_len}, pred_len={self.pred_len})")
+        return samples
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+
+        input_tensor = torch.FloatTensor(sample['input'])
+        output_tensor = torch.FloatTensor(sample['output'])
+        last_value_tensor = torch.FloatTensor([sample['last_input_value']])
+
+        return input_tensor, output_tensor, last_value_tensor
+
+
+def load_data_for_patchtst(data_dir, pattern='*.csv', train_split=0.8,
+                            seq_len=2000, pred_len=1000,
+                            signal_type='signal_1', use_all_features=True,
+                            batch_size=32, step_size=500):
+    """
+    为PatchTST加载固定长度数据
+
+    Args:
+        data_dir: 数据目录
+        pattern: 文件匹配模式
+        train_split: 训练集比例
+        seq_len: 输入序列长度（固定）
+        pred_len: 预测长度（固定）
+        signal_type: 目标信号
+        use_all_features: 是否使用所有特征
+        batch_size: 批次大小
+        step_size: 滑动窗口步长
+
+    Returns:
+        train_loader, test_loader
+    """
+    # 查找所有CSV文件
+    csv_files = glob.glob(os.path.join(data_dir, pattern))
+
+    if len(csv_files) == 0:
+        raise ValueError(f"No CSV files found in {data_dir} with pattern {pattern}")
+
+    print(f"Found {len(csv_files)} CSV files")
+
+    # 按瓶子编号分组（避免数据泄漏）
+    bottle_to_files = defaultdict(list)
+    unmatched_files = []
+
+    for csv_file in csv_files:
+        filename = os.path.basename(csv_file)
+        match = re.match(r'Data_(\d+)_\d+_open\.csv', filename)
+        if match:
+            bottle_num = int(match.group(1))
+            bottle_to_files[bottle_num].append(csv_file)
+        else:
+            unmatched_files.append(csv_file)
+
+    # 划分训练集和测试集
+    bottles = sorted(bottle_to_files.keys())
+    np.random.seed(42)
+    np.random.shuffle(bottles)
+    split_idx = int(len(bottles) * train_split)
+    train_bottles = bottles[:split_idx]
+    test_bottles = bottles[split_idx:]
+
+    train_files = []
+    test_files = []
+    for bottle in train_bottles:
+        train_files.extend(bottle_to_files[bottle])
+    for bottle in test_bottles:
+        test_files.extend(bottle_to_files[bottle])
+
+    test_files.extend(unmatched_files)
+
+    print(f"\n📊 数据集划分（按瓶子编号）：")
+    print(f"  训练文件: {len(train_files)}")
+    print(f"  测试文件: {len(test_files)}")
+
+    # 创建固定长度数据集
+    print("\n创建训练集...")
+    train_dataset = FixedLengthTorqueDataset(
+        train_files,
+        seq_len=seq_len,
+        pred_len=pred_len,
+        signal_type=signal_type,
+        use_all_features=use_all_features,
+        scaler=None,
+        step_size=step_size
+    )
+
+    print("\n创建测试集...")
+    test_dataset = FixedLengthTorqueDataset(
+        test_files,
+        seq_len=seq_len,
+        pred_len=pred_len,
+        signal_type=signal_type,
+        use_all_features=use_all_features,
+        scaler=train_dataset.scaler,  # 使用训练集的scaler
+        step_size=step_size
+    )
+
+    # 创建DataLoader（标准方式，不需要特殊的sampler）
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        drop_last=False
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        drop_last=False
+    )
+
+    print(f"\n✅ PatchTST数据加载完成！")
+    print(f"训练批次数: {len(train_loader)}")
+    print(f"测试批次数: {len(test_loader)}")
+
+    return train_loader, test_loader

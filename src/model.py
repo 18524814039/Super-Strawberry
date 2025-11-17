@@ -1,11 +1,19 @@
 """
 深度学习模型定义
-包含LSTM、GRU和Transformer等模型用于时间序列预测
+包含LSTM、GRU、Transformer和PatchTST等模型用于时间序列预测
 """
 
 import torch
 import torch.nn as nn
 import math
+
+# 导入PatchTST
+try:
+    from .patchtst_model import get_patchtst_model
+    PATCHTST_AVAILABLE = True
+except ImportError:
+    PATCHTST_AVAILABLE = False
+    print("Warning: PatchTST model not available")
 
 
 class LSTMPredictor(nn.Module):
@@ -284,17 +292,22 @@ class SimpleLSTM(nn.Module):
 
 
 def get_model(model_type='lstm', input_dim=4, hidden_dim=128, num_layers=2,
-              output_length=400, dropout=0.2):
+              output_length=400, dropout=0.2, seq_len=None,
+              patch_len=16, stride=8, n_heads=8):
     """
     根据类型获取模型
 
     Args:
-        model_type: 模型类型 ('lstm', 'gru', 'transformer', 'simple_lstm')
+        model_type: 模型类型 ('lstm', 'gru', 'transformer', 'simple_lstm', 'patchtst')
         input_dim: 输入特征维度
-        hidden_dim: 隐藏层维度
-        num_layers: 层数
+        hidden_dim: 隐藏层维度 (PatchTST中对应d_model)
+        num_layers: 层数 (PatchTST中对应e_layers)
         output_length: 输出序列长度
         dropout: Dropout比例
+        seq_len: 输入序列长度 (仅PatchTST需要)
+        patch_len: Patch长度 (仅PatchTST)
+        stride: Patch步长 (仅PatchTST)
+        n_heads: 注意力头数 (仅PatchTST)
 
     Returns:
         model: 选择的模型
@@ -307,5 +320,24 @@ def get_model(model_type='lstm', input_dim=4, hidden_dim=128, num_layers=2,
         return TransformerPredictor(input_dim, hidden_dim, 8, num_layers, output_length, dropout)
     elif model_type == 'simple_lstm':
         return SimpleLSTM(input_dim, hidden_dim, num_layers, output_length, dropout)
+    elif model_type == 'patchtst':
+        if not PATCHTST_AVAILABLE:
+            raise ImportError("PatchTST model is not available. Check patchtst_model.py")
+        if seq_len is None:
+            raise ValueError("seq_len must be specified for PatchTST model")
+
+        return get_patchtst_model(
+            input_dim=input_dim,
+            seq_len=seq_len,
+            pred_len=output_length,
+            d_model=hidden_dim,
+            n_heads=n_heads,
+            e_layers=num_layers,
+            d_ff=hidden_dim * 2,  # 通常是d_model的2倍
+            patch_len=patch_len,
+            stride=stride,
+            dropout=dropout,
+            target_dim=1  # 只预测signal_1
+        )
     else:
         raise ValueError(f"Unknown model type: {model_type}")
